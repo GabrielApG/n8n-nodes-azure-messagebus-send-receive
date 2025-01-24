@@ -1,4 +1,4 @@
-# n8n-nodes-n8n-nodes-azure-messagebus-send-receive
+# n8n-nodes-azure-messagebus-send-receive
 
 This is an n8n community node. It lets you use the azure messagebus in your n8n workflows.
 

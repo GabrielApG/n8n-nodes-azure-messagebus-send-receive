@@ -1,4 +1,4 @@
-# n8n-nodes-azure-messagebus
+# n8n-nodes-n8n-nodes-azure-messagebus-send-receive
 
 This is an n8n community node. It lets you use the azure messagebus in your n8n workflows.
 
@@ -6,13 +6,13 @@ This is a very basic implementation that only allows you to send to a specific e
 
 [n8n](https://n8n.io/) is a [fair-code licensed](https://docs.n8n.io/reference/license/) workflow automation platform.
 
-[Installation](#installation)  
-[Operations](#operations)  
-[Credentials](#credentials)  <!-- delete if no auth needed -->  
-[Compatibility](#compatibility)  
-[Usage](#usage)  <!-- delete if not using this section -->  
-[Resources](#resources)  
-[Version history](#version-history)  <!-- delete if not using this section -->  
+[Installation](#installation)
+[Operations](#operations)
+[Credentials](#credentials)
+[Compatibility](#compatibility)
+[Usage](#usage)
+[Resources](#resources)
+[Version history](#version-history)
 
 ## Installation
 
@@ -20,7 +20,7 @@ Follow the [installation guide](https://docs.n8n.io/integrations/community-nodes
 
 ## Operations
 
-send message to azure messagebus 
+send message to azure messagebus
 
 ## Credentials
 
@@ -48,4 +48,26 @@ _By the time users are looking for community nodes, they probably already know n
 
 v0.0.1 - basic funcionality.  no q change ability to make the node faster
 
+
+## Exemplo de Payload para enviar
+
+```json
+{{ { teste: $json.my_field_1 } }}
+```
+
+### Saída
+
+```json
+[
+  {
+    "success": true,
+    "operation": "send",
+    "topic": "testes",
+    "subscriptionName": "subscription_testes",
+    "messageSent": {
+      "teste": "value"
+    }
+  }
+]
+```
 

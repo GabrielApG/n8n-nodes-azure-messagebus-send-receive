@@ -1,10 +1,10 @@
 {
-  "name": "n8n-nodes-azure-messagebus",
+  "name": "n8n-nodes-n8n-nodes-azure-messagebus-send-receive",
   "version": "0.0.1",
   "description": "Initial N8N node to send messages to AZURE message Bus",
   "keywords": [
     "n8n-community-node-package",
-    "n8n-nodes-azure-messagebus"
+    "n8n-nodes-n8n-nodes-azure-messagebus-send-receive"
   ],
   "license": "MIT",
   "homepage": "",
@@ -14,7 +14,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/tinusrautenbach/n8n-nodes-azure-messagebus.git"
+    "url": "https://github.com/GabrielApG/n8n-nodes-azure-messagebus-send-receive.git"
   },
   "main": "index.js",
   "scripts": {
@@ -49,6 +49,6 @@
     "typescript": "~4.8.4"
   },
   "dependencies": {
-    "@azure/service-bus": "^7.9.0"
+    "@azure/service-bus": "^7.9.5"
   }
 }

@@ -1,125 +1,289 @@
 import {
-	IDataObject,
 	IExecuteFunctions,
+} from 'n8n-core';
+
+import {
 	INodeExecutionData,
 	INodeType,
 	INodeTypeDescription,
-	NodeOperationError,
 } from 'n8n-workflow';
 
-
-
-import {
-	sendMessage,
-} from './GenericFunctions';
-import { AzMBModels } from './models';
-import { ServiceBusClient } from '@azure/service-bus';
-
+import { ServiceBusClient, ServiceBusMessage } from '@azure/service-bus';
 
 export class AzureMessageBusNode implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Azure Message Bus Node',
 		name: 'azureMessageBusNode',
+		icon: 'file:azure.svg',
 		group: ['transform'],
 		version: 1,
-		icon: 'file:azure.svg',
-		description: 'Basic Azure Message Bus Node',
+		description: 'Sends and receives messages from Azure Service Bus',
 		defaults: {
-			name: 'Azure Message Bus Node',
+			name: 'Azure Service Bus',
 		},
 		inputs: ['main'],
 		outputs: ['main'],
-		credentials: [
-			{
-				name: 'azureMessageBusNodeApi',
-				required: false,
-			},
-		],
 		properties: [
-			// Node properties which the user gets displayed and
-			// can change on the node.
+			// Credenciais ou Connection String
+			{
+				displayName: 'Connection String',
+				name: 'connectionString',
+				type: 'string',
+				default: '',
+				required: true,
+				description: 'Connection string para se autenticar no Azure Service Bus',
+			},
+			// Queue ou Topic
+			{
+				displayName: 'Queue or Topic Name',
+				name: 'queueOrTopic',
+				type: 'string',
+				default: '',
+				required: true,
+				description: 'Nome da fila (queue) ou do tópico (topic) no Azure Service Bus',
+			},
+			// Subscription Name (apenas se for Topic)
+			{
+				displayName: 'Subscription Name (Se for Tópico)',
+				name: 'subscriptionName',
+				type: 'string',
+				default: '',
+				description: 'Nome da Subscription (caso esteja usando tópicos). Deixe vazio se for fila.',
+			},
+			// Operation: send ou receive
+			{
+				displayName: 'Operation',
+				name: 'operation',
+				type: 'options',
+				noDataExpression: true,
+				options: [
+					{
+						name: 'Send',
+						value: 'send',
+					},
+					{
+						name: 'Receive',
+						value: 'receive',
+					},
+				],
+				default: 'send',
+				description: 'Escolha a operação: enviar ou receber mensagens',
+			},
+			// Propriedade(s) específica(s) para a operação SEND
+			{
+				displayName: 'Message Body (JSON)',
+				name: 'messageBody',
+				type: 'json',   // <--- Importante para tratar como objeto
+				default: {},    // Inicia como {}
+				displayOptions: {
+					show: {
+						operation: [
+							'send',
+						],
+					},
+				},
+				description: 'Conteúdo da mensagem a ser enviada em formato JSON',
+			},
+			// Propriedade(s) específica(s) para a operação RECEIVE
+			{
+				displayName: 'Maximum Number of Messages',
+				name: 'maxMessages',
+				type: 'number', // <--- Faz mais sentido ser number
+				default: 1,
+				displayOptions: {
+					show: {
+						operation: [
+							'receive',
+						],
+					},
+				},
+				description: 'Quantidade máxima de mensagens para receber em uma única requisição',
+			},
+			{
+				displayName: 'Max Wait Time (Ms)',
+				name: 'maxWaitTime',
+				type: 'number',
+				default: 5000,
+				displayOptions: {
+					show: {
+						operation: [
+							'receive',
+						],
+					},
+				},
+				description: 'Tempo máximo (em milissegundos) para aguardar mensagens antes de encerrar a requisição',
+			},
+			{
+				displayName: 'Post Processing Action',
+				name: 'postProcess',
+				type: 'options',
+				displayOptions: {
+					show: {
+						operation: [
+							'receive',
+						],
+					},
+				},
+				options: [
+					{
+						name: 'Complete (Remove Message)',
+						value: 'complete',
+						description: 'Automatically mark the message as complete',
+					},
+					{
+						name: 'Abandon (Return to Queue)',
+						value: 'abandon',
+						description: 'Abandon message so it becomes available again in the queue',
+					},
+					{
+						name: 'Dead-Letter',
+						value: 'deadLetter',
+						description: 'Move the message to the dead-letter queue',
+					},
+				],
+				default: 'complete',
+				description: 'What to do with the message after it is received',
+			},
+			{
+				displayName: 'Receive Mode',
+				name: 'receiveMode',
+				type: 'options',
+				displayOptions: {
+					show: {
+						operation: [
+							'receive',
+						],
+					},
+				},
+				options: [
+					{
+						name: 'Receive And Complete',
+						value: 'receiveAndComplete',
+					},
+					{
+						name: 'Peek (Preview Only)',
+						value: 'peek',
+					},
+				],
+				default: 'receiveAndComplete',
+				description: 'Whether to actually remove messages from the queue or just peek at them',
+			},
 
-			{
-				displayName: 'Event Name',
-				name: 'event',
-				type: 'string',
-				default: '',
-				placeholder: 'event-name',
-				description: 'Event defined on the event bus',
-			},
-			{
-				displayName: 'Data',
-				name: 'data',
-				type: 'string',
-				default: '',
-				placeholder: '',
-				description: 'Data in JSON format',
-			},
 		],
 	};
 
-	// The function below is responsible for actually doing whatever this node
-	// is supposed to do. In this case, we're just appending the `myString` property
-	// with whatever the user has entered.
-	// You can make async calls and use `await`.
 	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
-		const items = this.getInputData();
+		const returnData: INodeExecutionData[] = [];
 
-		//let item: INodeExecutionData;
+		// Obtenção dos parâmetros
+		const connectionString = this.getNodeParameter('connectionString', 0) as string;
+		const queueOrTopic = this.getNodeParameter('queueOrTopic', 0) as string;
+		const subscriptionName = this.getNodeParameter('subscriptionName', 0, '') as string;
+		const operation = this.getNodeParameter('operation', 0) as string;
 
+		// Inicia o cliente de Service Bus
+		const sbClient = new ServiceBusClient(connectionString);
 
-		const credentials = await this.getCredentials('azureMessageBusNodeApi') as AzMBModels.Credentials;
-		let connectionString  =  credentials.connectionString;
+		try {
+			if (operation === 'send') {
+				// "messageBody" já é do tipo "any" (objeto) pois definimos type: 'json'
+				const messageBody = this.getNodeParameter('messageBody', 0);
 
+				const sender = sbClient.createSender(queueOrTopic);
+				// Envia o objeto diretamente no body
+				const message: ServiceBusMessage = {
+					body: messageBody,
+				};
+				await sender.sendMessages(message);
+				await sender.close();
 
-	const endpointUri: string = connectionString + 'EntityPath=' + credentials.qName;
+				// Retorna o objeto JSON, sem \n escapados
+				returnData.push({
+					json: {
+						success: true,
+						operation: 'send',
+						[subscriptionName ? 'topic' : 'queueOrTopic']: queueOrTopic,
+						subscriptionName,
+						messageSent: messageBody,
+					},
+				});
 
-	const serviceBusClient = new ServiceBusClient(endpointUri);
+			} else if (operation === 'receive') {
+				const maxMessages = this.getNodeParameter('maxMessages', 0) as number;
+				const maxWaitTime = this.getNodeParameter('maxWaitTime', 0) as number;
 
-	const sender = serviceBusClient.createSender ( credentials.qName);
+				const postProcess = this.getNodeParameter('postProcess', 0) as string;
+				const receiveMode = this.getNodeParameter('receiveMode', 0) as string;
 
-		const returnData: IDataObject[] = [];
-		let responseData;
-		// Iterates over all input items and add the key "myString" with the
-		// value the parameter "myString" resolves to.
-		// (This could be a different value for each item in case it contains an expression)
-		for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
-			try {
-
-				let event = this.getNodeParameter('event', itemIndex, '') as string;
-				let data = this.getNodeParameter('data', itemIndex, '') as string;
-
-				//item = items[itemIndex];
-				console.log(itemIndex +":" + event + ":" + data);
-				let itemData = {"event":event, "data":data};
-				let sendItem = [];
-				sendItem.push({body:itemData})
-
-				responseData = await sendMessage.call( this,  sender, sendItem);
-				console.log("AFTER" + itemIndex);
-
-				returnData.push(responseData as IDataObject);
-
-			} catch (error) {
-				// This node should never fail but we want to showcase how
-				// to handle errors.
-				if (this.continueOnFail()) {
-					items.push({ json: this.getInputData(itemIndex)[0].json, error, pairedItem: itemIndex });
-				} else {
-					// Adding `itemIndex` allows other workflows to handle this error
-					if (error.context) {
-						// If the error thrown already contains the context property,
-						// only append the itemIndex
-						error.context.itemIndex = itemIndex;
-						throw error;
+				let messages;
+				if (receiveMode === 'peek') {
+					// "Peek" não remove as mensagens da fila, apenas lê.
+					if (!subscriptionName) {
+						const receiver = sbClient.createReceiver(queueOrTopic);
+						messages = await receiver.peekMessages(maxMessages);
+						// Em peek, não chamamos "completeMessage", pois nada é “recebido” de fato.
+						await receiver.close();
+					} else {
+						const receiver = sbClient.createReceiver(queueOrTopic, subscriptionName);
+						messages = await receiver.peekMessages(maxMessages);
+						await receiver.close();
 					}
-					throw new NodeOperationError(this.getNode(), error, {
-						itemIndex,
-					});
+				} else {
+					// "receiveAndComplete" (modelo atual)
+					if (!subscriptionName) {
+						const receiver = sbClient.createReceiver(queueOrTopic);
+						messages = await receiver.receiveMessages(maxMessages, {
+							maxWaitTimeInMs: maxWaitTime,
+						});
+						// Aqui você aplica "postProcess".
+						for (const msg of messages) {
+							if (postProcess === 'complete') {
+								await receiver.completeMessage(msg);
+							} else if (postProcess === 'abandon') {
+								await receiver.abandonMessage(msg);
+							} else if (postProcess === 'deadLetter') {
+								await receiver.deadLetterMessage(msg);
+							}
+						}
+						await receiver.close();
+					} else {
+						const receiver = sbClient.createReceiver(queueOrTopic, subscriptionName);
+						messages = await receiver.receiveMessages(maxMessages, {
+							maxWaitTimeInMs: maxWaitTime,
+						});
+						for (const msg of messages) {
+							if (postProcess === 'complete') {
+								await receiver.completeMessage(msg);
+							} else if (postProcess === 'abandon') {
+								await receiver.abandonMessage(msg);
+							} else if (postProcess === 'deadLetter') {
+								await receiver.deadLetterMessage(msg);
+							}
+						}
+						await receiver.close();
+					}
 				}
+
+
+				// messagesReceived: array contendo o "body" de cada mensagem
+				returnData.push({
+					json: {
+						success: true,
+						operation: 'receive',
+						queueOrTopic,
+						subscriptionName,
+						messagesReceived: messages.map((m) => m.body),
+					},
+				});
 			}
+		} catch (error) {
+			// Em caso de erro
+			// eslint-disable-next-line n8n-nodes-base/node-execute-block-wrong-error-thrown
+			throw new Error(`Erro ao executar a operação '${operation}': ${error.message}`);
+		} finally {
+			await sbClient.close();
 		}
 
-		return this.prepareOutputData(items);
+		return [returnData];
 	}
 }
